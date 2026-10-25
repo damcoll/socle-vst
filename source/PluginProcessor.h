@@ -1,0 +1,57 @@
+#pragma once
+
+#include <juce_audio_processors/juce_audio_processors.h>
+
+#include "dsp/Synth.h"
+
+#include <atomic>
+
+class SocleProcessor final : public juce::AudioProcessor
+{
+public:
+    SocleProcessor();
+    ~SocleProcessor() override = default;
+
+    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void releaseResources() override {}
+
+    bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
+
+    void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    using AudioProcessor::processBlock;
+
+    juce::AudioProcessorEditor* createEditor() override;
+    bool hasEditor() const override { return true; }
+
+    const juce::String getName() const override { return JucePlugin_Name; }
+
+    bool acceptsMidi() const override { return true; }
+    bool producesMidi() const override { return false; }
+    bool isMidiEffect() const override { return false; }
+    double getTailLengthSeconds() const override { return 0.0; }
+
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram (int) override {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+
+    void getStateInformation (juce::MemoryBlock& destData) override;
+    void setStateInformation (const void* data, int sizeInBytes) override;
+
+    juce::AudioProcessorValueTreeState parameters;
+
+    // read by the editor (message thread)
+    std::atomic<int> lastNote { -1 };
+
+private:
+    socle::Synth synth;
+    juce::SmoothedValue<float> masterGain;
+    double sampleRate = 44100.0;
+
+    std::atomic<float>* masterParam = nullptr;
+    std::atomic<float>* attackParam = nullptr;
+    std::atomic<float>* releaseParam = nullptr;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SocleProcessor)
+};

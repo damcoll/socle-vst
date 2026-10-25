@@ -1,0 +1,8 @@
+build/
+dist/
+*.log
+.vs/
+.vscode/
+*.user
+.DS_Store
+renders/
