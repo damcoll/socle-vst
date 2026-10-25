@@ -41,7 +41,17 @@ juce_add_plugin(Socle
 target_sources(Socle
     PRIVATE
         source/PluginProcessor.cpp
-        source/PluginEditor.cpp)
+        source/PluginEditor.cpp
+        source/ui/Theme.cpp
+        source/ui/Controls.cpp)
+
+# the MONOLITHE family typefaces (SIL Open Font License, see assets/fonts)
+juce_add_binary_data(SocleAssets
+    SOURCES
+        assets/fonts/BigShouldersStencilDisplay-Black.ttf
+        assets/fonts/BigShouldersDisplay-ExtraBold.ttf
+        assets/fonts/IBMPlexMono-Regular.ttf
+        assets/fonts/IBMPlexMono-SemiBold.ttf)
 
 target_include_directories(Socle PRIVATE source)
 
@@ -53,6 +63,7 @@ target_compile_definitions(Socle
 
 target_link_libraries(Socle
     PRIVATE
+        SocleAssets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC
@@ -67,6 +78,17 @@ target_sources(SocleRender PRIVATE tools/render.cpp)
 target_include_directories(SocleRender PRIVATE $<TARGET_PROPERTY:Socle,INCLUDE_DIRECTORIES>)
 target_compile_definitions(SocleRender PRIVATE $<TARGET_PROPERTY:Socle,COMPILE_DEFINITIONS>)
 target_link_libraries(SocleRender
+    PRIVATE
+        Socle
+    PUBLIC
+        juce::juce_recommended_config_flags)
+
+# Snapshot: a PNG of the plugin window, to check the front panel without a DAW
+juce_add_console_app(SocleSnapshot PRODUCT_NAME "socle_snapshot")
+target_sources(SocleSnapshot PRIVATE tools/snapshot.cpp)
+target_include_directories(SocleSnapshot PRIVATE $<TARGET_PROPERTY:Socle,INCLUDE_DIRECTORIES>)
+target_compile_definitions(SocleSnapshot PRIVATE $<TARGET_PROPERTY:Socle,COMPILE_DEFINITIONS>)
+target_link_libraries(SocleSnapshot
     PRIVATE
         Socle
     PUBLIC

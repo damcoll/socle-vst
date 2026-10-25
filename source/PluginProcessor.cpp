@@ -109,6 +109,7 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         if (msg.isNoteOn())
         {
             lastNote.store (msg.getNoteNumber(), std::memory_order_relaxed);
+            noteCounter.fetch_add (1, std::memory_order_relaxed);
             synth.noteOn (msg.getNoteNumber(), msg.getFloatVelocity());
         }
         else if (msg.isNoteOff())
@@ -130,6 +131,11 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         }
     }
     renderUntil (buffer.getNumSamples());
+
+    lfoValue.store (synth.lfoValue, std::memory_order_relaxed);
+    const auto peak = buffer.getMagnitude (0, buffer.getNumSamples());
+    if (peak > outputPeak.load (std::memory_order_relaxed))
+        outputPeak.store (peak, std::memory_order_relaxed);
 }
 
 juce::AudioProcessorEditor* SocleProcessor::createEditor()

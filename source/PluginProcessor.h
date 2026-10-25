@@ -43,8 +43,13 @@ public:
 
     juce::AudioProcessorValueTreeState parameters;
 
-    // read by the editor (message thread)
+    // read by the editor (message thread): MIDI LED, last note, LFO light
+    std::atomic<int> noteCounter { 0 };
     std::atomic<int> lastNote { -1 };
+    std::atomic<float> lfoValue { 0.0f };
+
+    // loudest sample since the editor last read it (read with exchange (0)): VU needle
+    std::atomic<float> outputPeak { 0.0f };
 
 private:
     socle::Synth synth;
