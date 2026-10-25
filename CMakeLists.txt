@@ -59,3 +59,15 @@ target_link_libraries(Socle
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# Render: bass lines through the whole plugin, one .wav per setting, to tune the sound without a DAW
+juce_add_console_app(SocleRender PRODUCT_NAME "socle_render")
+target_sources(SocleRender PRIVATE tools/render.cpp)
+# reuse the plugin's compiled code: same headers and settings, without compiling JUCE twice
+target_include_directories(SocleRender PRIVATE $<TARGET_PROPERTY:Socle,INCLUDE_DIRECTORIES>)
+target_compile_definitions(SocleRender PRIVATE $<TARGET_PROPERTY:Socle,COMPILE_DEFINITIONS>)
+target_link_libraries(SocleRender
+    PRIVATE
+        Socle
+    PUBLIC
+        juce::juce_recommended_config_flags)

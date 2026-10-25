@@ -46,12 +46,14 @@ public:
 
 private:
     socle::Synth synth;
+    socle::DcBlocker dcBlocker;
     juce::SmoothedValue<float> masterGain;
-    double sampleRate = 44100.0;
+
+    // the panel's current values, gathered for the synth once per block
+    socle::SynthParams readParams() const;
+    float value (const char* id) const { return parameters.getRawParameterValue (id)->load(); }
 
     std::atomic<float>* masterParam = nullptr;
-    std::atomic<float>* attackParam = nullptr;
-    std::atomic<float>* releaseParam = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SocleProcessor)
 };

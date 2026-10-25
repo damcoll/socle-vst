@@ -7,16 +7,43 @@ SocleProcessor::SocleProcessor()
       parameters (*this, nullptr, "SOCLE", socle::params::createLayout())
 {
     masterParam = parameters.getRawParameterValue ("master");
-    attackParam = parameters.getRawParameterValue ("enva_a");
-    releaseParam = parameters.getRawParameterValue ("enva_r");
 }
 
 void SocleProcessor::prepareToPlay (double rate, int)
 {
-    sampleRate = rate;
+    synth.setParams (readParams());
     synth.prepare (rate);
+    dcBlocker.prepare (rate);
     masterGain.reset (rate, 0.02);
     masterGain.setCurrentAndTargetValue (masterParam->load());
+}
+
+socle::SynthParams SocleProcessor::readParams() const
+{
+    using Shape = socle::Oscillator::Shape;
+    socle::SynthParams p;
+    p.shape1 = value ("osc1_forme") < 0.5f ? Shape::saw : Shape::square;
+    p.shape2 = value ("osc2_forme") < 0.5f ? Shape::saw : Shape::square;
+    p.accord2 = value ("osc2_accord");
+    p.desaccord2 = value ("osc2_desaccord");
+    p.niveau1 = value ("niv_osc1");
+    p.niveau2 = value ("niv_osc2");
+    p.niveauSub = value ("niv_sub");
+    p.niveauBruit = value ("niv_bruit");
+    p.coupure = value ("coupure");
+    p.resonance = value ("resonance");
+    p.drive = value ("drive");
+    p.envFiltre = value ("env_filtre");
+    p.velocite = value ("velocite");
+    p.fA = value ("envf_a");
+    p.fD = value ("envf_d");
+    p.fS = value ("envf_s");
+    p.fR = value ("envf_r");
+    p.aA = value ("enva_a");
+    p.aD = value ("enva_d");
+    p.aS = value ("enva_s");
+    p.aR = value ("enva_r");
+    return p;
 }
 
 bool SocleProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -29,7 +56,7 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
-    synth.setEnvelope (attackParam->load(), releaseParam->load(), sampleRate);
+    synth.setParams (readParams());
     masterGain.setTargetValue (masterParam->load());
 
     auto* left = buffer.getWritePointer (0);
@@ -41,7 +68,7 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         for (; sample < end; ++sample)
         {
             // MASTER at its default (0.8) is unity gain; tanh tames the peaks of the sum
-            const auto out = std::tanh (synth.next() * 0.3f * 1.25f * masterGain.getNextValue());
+            const auto out = std::tanh (dcBlocker.process (synth.next()) * 1.25f * masterGain.getNextValue());
             left[sample] = out;
             right[sample] = out;
         }
