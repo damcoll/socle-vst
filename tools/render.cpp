@@ -36,6 +36,12 @@ namespace
         { 32, 15, 38, 100 }, { 32, 15, 42, 90 }, { 32, 15, 45, 90 }, { 32, 15, 26, 110 },
     };
 
+    // overlapping notes: each one starts before the previous is released (MONO / LEGATO, glide)
+    const std::vector<Note> liee {
+        { 0, 5, 28, 110 }, { 4, 5, 40, 90 }, { 8, 5, 31, 100 }, { 12, 5, 35, 90 },
+        { 16, 9, 28, 120 }, { 24, 5, 38, 100 }, { 28, 4, 26, 110 },
+    };
+
     const std::vector<Note> tenue { { 0, 63, 33, 110 } };
 
     juce::RangedAudioParameter* find (juce::AudioProcessor& p, const juce::String& id)
@@ -86,6 +92,14 @@ int main (int argc, char* argv[])
                                         { "env_filtre", 0.5f }, { "niv_bruit", 0.15f } } },
         { "05_balayage", &tenue, 1, { { "osc2_forme", 0 }, { "resonance", 0.9f }, { "env_filtre", 0 }, { "enva_s", 1 }, { "drive", 0.3f } },
           [] (juce::AudioProcessor& p, double progress) { set (p, "coupure", (float) (30.0 * std::pow (600.0, 1.0 - std::abs (2.0 * progress - 1.0)))); } },
+        { "07_mono_glide", &liee, 2, { { "mode", 1 }, { "glide", 0.08f }, { "osc2_forme", 0 }, { "coupure", 400 }, { "resonance", 0.5f },
+                                       { "env_filtre", 0.5f }, { "envf_d", 0.25f } } },
+        { "08_legato", &liee, 2, { { "mode", 2 }, { "glide", 0.12f }, { "osc2_forme", 0 }, { "coupure", 400 }, { "resonance", 0.5f },
+                                   { "env_filtre", 0.5f }, { "envf_d", 0.25f } } },
+        { "09_lfo_filtre", &tenue, 1, { { "osc2_forme", 0 }, { "coupure", 500 }, { "resonance", 0.6f }, { "env_filtre", 0 }, { "enva_s", 1 },
+                                        { "lfo_dest", 1 }, { "lfo_vitesse", 3 }, { "lfo_quantite", 0.6f } } },
+        { "10_lfo_largeur", &tenue, 1, { { "osc1_forme", 1 }, { "niv_sub", 0.4f }, { "coupure", 2500 }, { "env_filtre", 0 }, { "enva_s", 1 },
+                                         { "lfo_dest", 2 }, { "lfo_vitesse", 0.7f }, { "lfo_quantite", 0.9f } } },
         { "06_accords", &accords, 1, { { "osc2_forme", 0 }, { "coupure", 900 }, { "env_filtre", 0.3f }, { "enva_a", 0.02f }, { "enva_r", 0.6f } } },
     };
 

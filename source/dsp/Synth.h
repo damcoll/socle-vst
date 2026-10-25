@@ -2,6 +2,8 @@
 
 // The 8 voices and who plays which note.
 // One voice: OSC 1 + OSC 2 + SUB + BRUIT -> ladder filter -> amp, each with its ADSR.
+// POLY spreads the notes over the 8 voices; MONO and LEGATO play one voice,
+// last note wins, and going back to a note still held glides to it.
 
 #include "Blocks.h"
 
@@ -10,6 +12,9 @@
 namespace socle
 {
     constexpr int numVoices = 8;
+
+    enum class Mode { poly, mono, legato };
+    enum class LfoDestination { hauteur, filtre, largeur };
 
     // the front panel's values, read once per block
     struct SynthParams
@@ -20,6 +25,18 @@ namespace socle
         float coupure = 1200.0f, resonance = 0.3f, drive = 0.4f, envFiltre = 0.5f, velocite = 0.4f;
         float fA = 0.002f, fD = 0.4f, fS = 0.2f, fR = 0.3f;
         float aA = 0.002f, aD = 0.6f, aS = 0.8f, aR = 0.2f;
+        Mode mode = Mode::poly;
+        float glide = 0.0f; // seconds
+        float lfoVitesse = 2.0f, lfoQuantite = 0.0f;
+        LfoDestination lfoDestination = LfoDestination::filtre;
+    };
+
+    // what changes every sample and is shared by all voices
+    struct Modulation
+    {
+        float cutoffOctaves = 0.0f; // COUPURE + LFO + mod wheel, in octaves above 20 Hz
+        float pitchOffset = 0.0f;   // pitch bend + LFO, in semitones
+        float pulseWidth = 0.5f;
     };
 
     struct Voice
@@ -33,12 +50,15 @@ namespace socle
             note = -1;
         }
 
-        void start (int midiNote, float vel, uint32_t order)
+        // fromPitch < 0: no glide, the note starts on its own pitch
+        void start (int midiNote, float vel, uint32_t order, bool retrigger, float fromPitch)
         {
             const auto wasSilent = ampEnv.isIdle();
             note = midiNote;
             velocity = vel;
             age = order;
+            targetPitch = (float) midiNote;
+            pitch = fromPitch < 0.0f ? targetPitch : fromPitch;
             if (wasSilent)
             {
                 // a fresh note starts from the same phase every time: the attack punches the same way
@@ -47,9 +67,15 @@ namespace socle
                 sub.reset();
                 filter.reset();
             }
-            ampEnv.gateOn();
-            filterEnv.gateOn();
+            if (retrigger || wasSilent)
+            {
+                ampEnv.gateOn();
+                filterEnv.gateOn();
+            }
         }
+
+        // legato: change the pitch (with glide) without restarting the envelopes
+        void slideTo (int midiNote) { note = midiNote; targetPitch = (float) midiNote; }
 
         void stop()
         {
@@ -58,33 +84,36 @@ namespace socle
         }
 
         bool isActive() const { return ! ampEnv.isIdle(); }
-        bool isHeld() const { return isActive() && ! ampEnv.isReleasing(); }
 
-        // once per block: pitches and envelope times
+        // once per block: envelope times, interval of OSC 2, glide speed
         void update (const SynthParams& p)
         {
             ampEnv.setTimes (p.aA, p.aD, p.aS, p.aR, sampleRate);
             filterEnv.setTimes (p.fA, p.fD, p.fS, p.fR, sampleRate);
-            const auto f1 = noteToHz (note);
-            osc1.setFreq (f1, sampleRate);
-            osc2.setFreq (f1 * std::pow (2.0, (p.accord2 + p.desaccord2 / 100.0) / 12.0), sampleRate);
-            sub.setFreq (f1 * 0.5, sampleRate);
+            osc2Ratio = std::pow (2.0, (p.accord2 + p.desaccord2 / 100.0) / 12.0);
+            // GLIDE = time to get (99 %) to the new note
+            glideCoef = p.glide < 0.001f ? 1.0f : 1.0f - std::exp (-4.6f / (p.glide * (float) sampleRate));
         }
 
-        // cutoffOctaves: COUPURE as octaves above 20 Hz, smoothed by the synth
-        float next (const SynthParams& p, float cutoffOctaves)
+        float next (const SynthParams& p, const Modulation& mod)
         {
-            auto mix = osc1.next (p.shape1) * p.niveau1
-                     + osc2.next (p.shape2) * p.niveau2
-                     + sub.next (Oscillator::Shape::square) * p.niveauSub
-                     + noise.next() * p.niveauBruit;
+            pitch += (targetPitch - pitch) * glideCoef;
+            const auto f1 = noteToHz ((double) (pitch + mod.pitchOffset));
+            osc1.setFreq (f1, sampleRate);
+            osc2.setFreq (f1 * osc2Ratio, sampleRate);
+            sub.setFreq (f1 * 0.5, sampleRate);
+
+            const auto mix = osc1.next (p.shape1, mod.pulseWidth) * p.niveau1
+                           + osc2.next (p.shape2, mod.pulseWidth) * p.niveau2
+                           + sub.next (Oscillator::Shape::square) * p.niveauSub
+                           + noise.next() * p.niveauBruit;
 
             // ENV opens up to 7 octaves; the cutoff follows the keyboard by half;
             // VÉLOCITÉ opens the filter on hard notes and softens the quiet ones
             const auto fEnv = filterEnv.next();
-            const auto octaves = cutoffOctaves
+            const auto octaves = mod.cutoffOctaves
                                + 7.0f * p.envFiltre * fEnv
-                               + 0.5f * (float) (note - 48) / 12.0f
+                               + 0.5f * (pitch - 48.0f) / 12.0f
                                + 3.0f * p.velocite * (velocity - 0.5f);
             filter.set (20.0 * std::exp2 ((double) octaves), p.resonance, p.drive);
 
@@ -99,9 +128,9 @@ namespace socle
         Noise noise;
         Ladder filter;
         Adsr ampEnv, filterEnv;
-        double sampleRate = 44100.0;
+        double sampleRate = 44100.0, osc2Ratio = 1.0;
         int note = -1;
-        float velocity = 1.0f;
+        float velocity = 1.0f, pitch = 0.0f, targetPitch = 0.0f, glideCoef = 1.0f;
         uint32_t age = 0;
     };
 
@@ -115,68 +144,115 @@ namespace socle
             {
                 v.prepare (rate);
                 v.noise.state = (seed += 0x9e3779b9u);
+                v.update (params);
             }
+            heldCount = 0;
             smoothedCutoff = cutoffOctaves (params.coupure);
-            // ~5 ms to follow a turned COUPURE knob without zipper noise
+            // ~5 ms to follow a turned knob, the pitch bend or the mod wheel without zipper noise
             smoothing = 1.0f - std::exp (-1.0f / (0.005f * (float) rate));
         }
 
         void setParams (const SynthParams& p)
         {
+            // switching between POLY and MONO / LEGATO: release everything, nothing stays stuck
+            if (p.mode != params.mode)
+                allNotesOff();
             params = p;
             for (auto& v : voices)
-                if (v.isActive())
-                    v.update (params);
+                v.update (params);
         }
 
         void noteOn (int note, float velocity)
         {
-            // the same note again: retrigger its voice; else a free voice; else steal the oldest
-            Voice* chosen = nullptr;
-            for (auto& v : voices)
-                if (v.note == note)
-                    chosen = &v;
+            const auto glideFrom = params.glide > 0.0f && lastPitch >= 0.0f ? lastPitch : -1.0f;
 
-            if (chosen == nullptr)
-                for (auto& v : voices)
-                    if (! v.isActive())
-                    {
-                        chosen = &v;
-                        break;
-                    }
-
-            if (chosen == nullptr)
+            if (params.mode == Mode::poly)
             {
-                chosen = &voices[0];
-                for (auto& v : voices)
-                    if (v.age < chosen->age)
-                        chosen = &v;
+                auto& v = pickVoice (note);
+                v.start (note, velocity, ++counter, true, glideFrom);
             }
-
-            chosen->start (note, velocity, ++counter);
-            chosen->update (params);
+            else
+            {
+                const auto legato = heldCount > 0;
+                hold (note);
+                auto& v = voices[0];
+                if (params.mode == Mode::mono)
+                    v.start (note, velocity, ++counter, true, v.isActive() ? v.pitch : glideFrom);
+                else if (legato) // LEGATO: a note joined to the previous one slides without a new attack
+                    v.slideTo (note);
+                else
+                    v.start (note, velocity, ++counter, true, -1.0f);
+            }
+            lastPitch = (float) note;
         }
 
         void noteOff (int note)
         {
-            for (auto& v : voices)
-                if (v.note == note)
-                    v.stop();
+            if (params.mode == Mode::poly)
+            {
+                for (auto& v : voices)
+                    if (v.note == note)
+                        v.stop();
+                return;
+            }
+
+            const auto wasPlaying = heldCount > 0 && held[(size_t) heldCount - 1] == note;
+            release (note);
+            if (! wasPlaying)
+                return;
+
+            if (heldCount > 0)
+            {
+                // back to the note still held under the finger
+                const auto previous = held[(size_t) heldCount - 1];
+                voices[0].slideTo (previous);
+                lastPitch = (float) previous;
+            }
+            else
+            {
+                voices[0].stop();
+            }
         }
 
         void allNotesOff()
         {
+            heldCount = 0;
             for (auto& v : voices)
                 v.stop();
         }
 
+        void setPitchBend (float semitones) { bendTarget = semitones; }
+        void setModWheel (float amount) { wheelTarget = amount; }
+
         float next()
         {
             smoothedCutoff += (cutoffOctaves (params.coupure) - smoothedCutoff) * smoothing;
+            bend += (bendTarget - bend) * smoothing;
+            wheel += (wheelTarget - wheel) * smoothing;
+
+            // LFO: one triangle shared by all voices, -1..1
+            lfoPhase += params.lfoVitesse / sampleRate;
+            if (lfoPhase >= 1.0)
+                lfoPhase -= 1.0;
+            lfoValue = (float) (4.0 * std::abs (lfoPhase - 0.5) - 1.0);
+            const auto depth = params.lfoQuantite * lfoValue;
+
+            // the mod wheel opens the filter by up to 4 octaves
+            Modulation mod;
+            mod.cutoffOctaves = smoothedCutoff + 4.0f * wheel;
+            mod.pitchOffset = bend;
+            switch (params.lfoDestination)
+            {
+                // squared: small amounts stay a vibrato, the full turn swings an octave
+                case LfoDestination::hauteur: mod.pitchOffset += 12.0f * params.lfoQuantite * depth; break;
+                case LfoDestination::filtre: mod.cutoffOctaves += 3.0f * depth; break;
+                case LfoDestination::largeur: mod.pulseWidth += 0.45f * depth; break;
+            }
+
             float mix = 0.0f;
             for (auto& v : voices)
                 if (v.isActive())
-                    mix += v.next (params, smoothedCutoff);
+                    mix += v.next (params, mod);
             return mix;
         }
 
@@ -184,8 +260,51 @@ namespace socle
 
         std::array<Voice, numVoices> voices;
         SynthParams params;
-        double sampleRate = 44100.0;
+        float lfoValue = 0.0f; // for the LFO light on the front panel
+
+    private:
+        // POLY: the same note again retriggers its voice; else a free voice; else the oldest is stolen
+        Voice& pickVoice (int note)
+        {
+            for (auto& v : voices)
+                if (v.note == note)
+                    return v;
+
+            for (auto& v : voices)
+                if (! v.isActive())
+                    return v;
+
+            auto* oldest = &voices[0];
+            for (auto& v : voices)
+                if (v.age < oldest->age)
+                    oldest = &v;
+            return *oldest;
+        }
+
+        // the keys held in MONO / LEGATO, most recent last
+        void hold (int note)
+        {
+            release (note);
+            if (heldCount == (int) held.size())
+                release (held[0]);
+            held[(size_t) heldCount++] = note;
+        }
+
+        void release (int note)
+        {
+            int kept = 0;
+            for (int i = 0; i < heldCount; ++i)
+                if (held[(size_t) i] != note)
+                    held[(size_t) kept++] = held[(size_t) i];
+            heldCount = kept;
+        }
+
+        std::array<int, 16> held {};
+        int heldCount = 0;
+        double sampleRate = 44100.0, lfoPhase = 0.0;
         float smoothedCutoff = 0.0f, smoothing = 0.01f;
+        float bend = 0.0f, bendTarget = 0.0f, wheel = 0.0f, wheelTarget = 0.0f;
+        float lastPitch = -1.0f;
         uint32_t counter = 0;
     };
 }

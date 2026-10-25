@@ -43,6 +43,11 @@ socle::SynthParams SocleProcessor::readParams() const
     p.aD = value ("enva_d");
     p.aS = value ("enva_s");
     p.aR = value ("enva_r");
+    p.mode = (socle::Mode) juce::roundToInt (value ("mode"));
+    p.glide = value ("glide");
+    p.lfoVitesse = value ("lfo_vitesse");
+    p.lfoQuantite = value ("lfo_quantite");
+    p.lfoDestination = (socle::LfoDestination) juce::roundToInt (value ("lfo_dest"));
     return p;
 }
 
@@ -88,6 +93,15 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         else if (msg.isNoteOff())
         {
             synth.noteOff (msg.getNoteNumber());
+        }
+        else if (msg.isPitchWheel())
+        {
+            // +/- 2 semitones, the usual range of a keyboard's bend wheel
+            synth.setPitchBend (2.0f * (float) (msg.getPitchWheelValue() - 8192) / 8192.0f);
+        }
+        else if (msg.isControllerOfType (1))
+        {
+            synth.setModWheel ((float) msg.getControllerValue() / 127.0f);
         }
         else if (msg.isAllNotesOff() || msg.isAllSoundOff())
         {
