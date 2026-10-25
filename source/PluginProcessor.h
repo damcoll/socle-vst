@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "Presets.h"
 #include "dsp/Effects.h"
 #include "dsp/Machine.h"
 #include "dsp/Synth.h"
@@ -42,6 +43,7 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState parameters;
+    PresetManager presets { parameters };
 
     // read by the editor (message thread): MIDI LED, last note, LFO light
     std::atomic<int> noteCounter { 0 };
@@ -65,6 +67,9 @@ private:
     float value (const char* id) const { return parameters.getRawParameterValue (id)->load(); }
 
     std::atomic<float>* masterParam = nullptr;
+
+    // lets callbacks posted to the message thread know the processor still exists
+    std::shared_ptr<bool> aliveFlag = std::make_shared<bool> (true);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SocleProcessor)
 };

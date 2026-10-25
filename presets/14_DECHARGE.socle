@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SOCLE_PRESET name="DÉCHARGE" version="1">
+  <PARAM id="osc1_forme" value="0"/>
+  <PARAM id="osc2_forme" value="1"/>
+  <PARAM id="osc2_accord" value="0"/>
+  <PARAM id="osc2_desaccord" value="20"/>
+  <PARAM id="niv_osc1" value="0.8"/>
+  <PARAM id="niv_osc2" value="0.6"/>
+  <PARAM id="niv_sub" value="0.7"/>
+  <PARAM id="niv_bruit" value="0.45"/>
+  <PARAM id="coupure" value="700"/>
+  <PARAM id="resonance" value="0.5"/>
+  <PARAM id="drive" value="0.9"/>
+  <PARAM id="env_filtre" value="0.4"/>
+  <PARAM id="velocite" value="0.4"/>
+  <PARAM id="mode" value="0"/>
+  <PARAM id="glide" value="0"/>
+  <PARAM id="envf_a" value="0.002"/>
+  <PARAM id="envf_d" value="0.4"/>
+  <PARAM id="envf_s" value="0.2"/>
+  <PARAM id="envf_r" value="0.3"/>
+  <PARAM id="enva_a" value="0.002"/>
+  <PARAM id="enva_d" value="0.6"/>
+  <PARAM id="enva_s" value="0.8"/>
+  <PARAM id="enva_r" value="0.2"/>
+  <PARAM id="lfo_vitesse" value="2"/>
+  <PARAM id="lfo_quantite" value="0"/>
+  <PARAM id="lfo_dest" value="1"/>
+  <PARAM id="saturation" value="1"/>
+  <PARAM id="chorus" value="0"/>
+  <PARAM id="delay" value="0.2"/>
+  <PARAM id="retour" value="0.6"/>
+  <PARAM id="delay_temps" value="0"/>
+  <PARAM id="derive" value="0.8"/>
+  <PARAM id="poussiere" value="1"/>
+  <PARAM id="master" value="0.58"/>
+</SOCLE_PRESET>

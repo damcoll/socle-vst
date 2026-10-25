@@ -7,6 +7,9 @@ SocleProcessor::SocleProcessor()
       parameters (*this, nullptr, "SOCLE", socle::params::createLayout())
 {
     masterParam = parameters.getRawParameterValue ("master");
+
+    // a new SOCLE starts on the first factory preset
+    presets.load (0);
 }
 
 void SocleProcessor::prepareToPlay (double rate, int)
@@ -152,7 +155,15 @@ void SocleProcessor::getStateInformation (juce::MemoryBlock& destData)
 void SocleProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes); xml != nullptr && xml->hasTagName (parameters.state.getType()))
+    {
         parameters.replaceState (juce::ValueTree::fromXml (*xml));
+        // the host may restore from its own thread: the preset bookkeeping lives on the message thread
+        juce::MessageManager::callAsync ([this, alive = std::weak_ptr<bool> (aliveFlag)]
+        {
+            if (! alive.expired())
+                presets.restoreFromState();
+        });
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

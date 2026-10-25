@@ -37,15 +37,21 @@ private:
 
         Control& add (const char* id, const char* label, bool fader = false);
 
+        // presets: the arrows step through the list, the screen opens it, SAUVER asks for a name
+        void stepPreset (int delta);
+        void showPresetMenu();
+        void askPresetName();
+        void refreshPresetScreen();
+
         SocleProcessor& processor;
         std::vector<std::unique_ptr<Control>> controls;
         ui::Segmented forme1, forme2, mode, destination;
         ui::Selector delayTemps;
         ui::Key previous { juce::String::fromUTF8 ("◀") }, next { juce::String::fromUTF8 ("▶") }, save { "SAUVER" };
+        ui::PresetScreen presetScreen;
         ui::VuMeter vu;
 
         float ledLevel = 0.0f, lfoLevel = 0.0f;
-        juce::String presetName { "INIT" };
     };
 
     void timerCallback() override;

@@ -42,6 +42,7 @@ target_sources(Socle
     PRIVATE
         source/PluginProcessor.cpp
         source/PluginEditor.cpp
+        source/Presets.cpp
         source/ui/Theme.cpp
         source/ui/Controls.cpp)
 
@@ -52,6 +53,13 @@ juce_add_binary_data(SocleAssets
         assets/fonts/BigShouldersDisplay-ExtraBold.ttf
         assets/fonts/IBMPlexMono-Regular.ttf
         assets/fonts/IBMPlexMono-SemiBold.ttf)
+
+# the factory presets, readable XML files (presets/NN_NAME.socle)
+file(GLOB SOCLE_FACTORY_PRESETS CONFIGURE_DEPENDS presets/*.socle)
+juce_add_binary_data(SoclePresets
+    HEADER_NAME PresetData.h
+    NAMESPACE PresetData
+    SOURCES ${SOCLE_FACTORY_PRESETS})
 
 target_include_directories(Socle PRIVATE source)
 
@@ -64,6 +72,7 @@ target_compile_definitions(Socle
 target_link_libraries(Socle
     PRIVATE
         SocleAssets
+        SoclePresets
         juce::juce_audio_utils
         juce::juce_dsp
     PUBLIC

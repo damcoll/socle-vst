@@ -1,10 +1,13 @@
 // Plays bass lines through the whole plugin with a few settings, one .wav
-// each, to tune the sound without a DAW. Prints the peak level of each file.
+// each, then every factory preset (in presets/), to tune the sound without a
+// DAW. Prints the peak and RMS level of each file.
 //
 //   socle_render <output folder>
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+
+#include "PluginProcessor.h"
 
 #include <functional>
 
@@ -74,6 +77,68 @@ namespace
         std::vector<Setting> settings;
         std::function<void (juce::AudioProcessor&, double progress)> automation = {};
     };
+
+    // plays the notes `repeats` times plus one second of tail, writes the .wav, prints its levels
+    bool play (juce::AudioProcessor& plugin, const std::vector<Note>& notes, int repeats, const juce::File& file,
+               const std::function<void (juce::AudioProcessor&, double progress)>& automation = {})
+    {
+        plugin.prepareToPlay (renderRate, blockSize);
+        const auto samplesPerStep = (int) (renderRate * 60.0 / bpm / 4.0);
+
+        int patternSteps = 0;
+        for (const auto& n : notes)
+            patternSteps = std::max (patternSteps, ((n.step + n.length + 15) / 16) * 16);
+        const auto patternSamples = patternSteps * samplesPerStep;
+        const auto playedSamples = patternSamples * repeats;
+        const auto totalSamples = playedSamples + (int) renderRate;
+
+        juce::AudioBuffer<float> out (2, totalSamples);
+        juce::AudioBuffer<float> block (2, blockSize);
+
+        for (int start = 0; start < totalSamples; start += blockSize)
+        {
+            const auto n = std::min (blockSize, totalSamples - start);
+            if (automation)
+                automation (plugin, std::min (1.0, (double) start / playedSamples));
+
+            juce::MidiBuffer midi;
+            for (int s = start; s < start + n && s < playedSamples; ++s)
+            {
+                const auto inPattern = s % patternSamples;
+                if (inPattern % samplesPerStep != 0)
+                    continue;
+                const auto step = inPattern / samplesPerStep;
+                // note-offs first, so a note repeated on the same step is retriggered
+                for (const auto& note : notes)
+                    if (note.step + note.length == step)
+                        midi.addEvent (juce::MidiMessage::noteOff (1, note.note), s - start);
+                for (const auto& note : notes)
+                    if (note.step == step)
+                        midi.addEvent (juce::MidiMessage::noteOn (1, note.note, (juce::uint8) note.velocity), s - start);
+            }
+            if (start + n >= playedSamples && start < playedSamples)
+                for (const auto& note : notes)
+                    midi.addEvent (juce::MidiMessage::noteOff (1, note.note), std::max (0, playedSamples - 1 - start));
+
+            block.setSize (2, n, false, false, true);
+            plugin.processBlock (block, midi);
+            for (int ch = 0; ch < 2; ++ch)
+                out.copyFrom (ch, start, block, ch, 0, n);
+        }
+
+        file.deleteFile();
+        std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
+        juce::WavAudioFormat wav;
+        auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (renderRate).withNumChannels (2).withBitsPerSample (24));
+        if (writer == nullptr || ! writer->writeFromAudioSampleBuffer (out, 0, totalSamples))
+            return false;
+
+        const auto peak = out.getMagnitude (0, 0, totalSamples);
+        const auto rms = out.getRMSLevel (0, 0, playedSamples);
+        std::printf ("%-24s peak %6.1f dBFS   rms %6.1f dBFS\n", file.getFileNameWithoutExtension().toRawUTF8(),
+                     juce::Decibels::gainToDecibels (peak), juce::Decibels::gainToDecibels (rms));
+        return true;
+    }
 }
 
 int main (int argc, char* argv[])
@@ -109,70 +174,37 @@ int main (int argc, char* argv[])
         { "06_accords", &accords, 1, { { "osc2_forme", 0 }, { "coupure", 900 }, { "env_filtre", 0.3f }, { "enva_a", 0.02f }, { "enva_r", 0.6f } } },
     };
 
-    const auto samplesPerStep = (int) (renderRate * 60.0 / bpm / 4.0);
-
     for (const auto& render : renders)
     {
         std::unique_ptr<juce::AudioProcessor> plugin (createPluginFilter());
         plugin->setPlayConfigDetails (0, 2, renderRate, blockSize);
+        // these settings are relative to the parameters' defaults, not to the first preset
+        for (auto* param : plugin->getParameters())
+            param->setValueNotifyingHost (param->getDefaultValue());
         for (const auto& [id, value] : render.settings)
             set (*plugin, id, value);
-        plugin->prepareToPlay (renderRate, blockSize);
-
-        int patternSteps = 0;
-        for (const auto& n : *render.notes)
-            patternSteps = std::max (patternSteps, ((n.step + n.length + 15) / 16) * 16);
-        const auto patternSamples = patternSteps * samplesPerStep;
-        const auto playedSamples = patternSamples * render.repeats;
-        const auto totalSamples = playedSamples + (int) renderRate;
-
-        juce::AudioBuffer<float> out (2, totalSamples);
-        juce::AudioBuffer<float> block (2, blockSize);
-
-        for (int start = 0; start < totalSamples; start += blockSize)
-        {
-            const auto n = std::min (blockSize, totalSamples - start);
-            if (render.automation)
-                render.automation (*plugin, std::min (1.0, (double) start / playedSamples));
-
-            juce::MidiBuffer midi;
-            for (int s = start; s < start + n && s < playedSamples; ++s)
-            {
-                const auto inPattern = s % patternSamples;
-                if (inPattern % samplesPerStep != 0)
-                    continue;
-                const auto step = inPattern / samplesPerStep;
-                // note-offs first, so a note repeated on the same step is retriggered
-                for (const auto& note : *render.notes)
-                    if (note.step + note.length == step)
-                        midi.addEvent (juce::MidiMessage::noteOff (1, note.note), s - start);
-                for (const auto& note : *render.notes)
-                    if (note.step == step)
-                        midi.addEvent (juce::MidiMessage::noteOn (1, note.note, (juce::uint8) note.velocity), s - start);
-            }
-            if (start + n >= playedSamples && start < playedSamples)
-                for (const auto& note : *render.notes)
-                    midi.addEvent (juce::MidiMessage::noteOff (1, note.note), std::max (0, playedSamples - 1 - start));
-
-            block.setSize (2, n, false, false, true);
-            plugin->processBlock (block, midi);
-            for (int ch = 0; ch < 2; ++ch)
-                out.copyFrom (ch, start, block, ch, 0, n);
-        }
-
-        const auto file = outDir.getChildFile (juce::String (render.file) + ".wav");
-        file.deleteFile();
-        std::unique_ptr<juce::OutputStream> stream = file.createOutputStream();
-        juce::WavAudioFormat wav;
-        auto writer = wav.createWriterFor (stream, juce::AudioFormatWriterOptions{}.withSampleRate (renderRate).withNumChannels (2).withBitsPerSample (24));
-        if (writer == nullptr || ! writer->writeFromAudioSampleBuffer (out, 0, totalSamples))
+        if (! play (*plugin, *render.notes, render.repeats, outDir.getChildFile (juce::String (render.file) + ".wav"), render.automation))
             return 1;
-        writer.reset();
+    }
 
-        const auto peak = out.getMagnitude (0, 0, totalSamples);
-        const auto rms = out.getRMSLevel (0, 0, playedSamples);
-        std::printf ("%-14s peak %6.1f dBFS   rms %6.1f dBFS\n", render.file,
-                     juce::Decibels::gainToDecibels (peak), juce::Decibels::gainToDecibels (rms));
+    // one file per factory preset, played on the line that suits it
+    const auto presetDir = outDir.getChildFile ("presets");
+    presetDir.createDirectory();
+    const juce::StringArray onLegato { "CÂBLE NU", "GOUDRON", "TURBINE", "CHARBON", "PYLÔNE", "BITUME" };
+    for (int i = 0;; ++i)
+    {
+        std::unique_ptr<juce::AudioProcessor> plugin (createPluginFilter());
+        auto& socle = dynamic_cast<SocleProcessor&> (*plugin);
+        if (i >= socle.presets.numFactory())
+            break;
+        plugin->setPlayConfigDetails (0, 2, renderRate, blockSize);
+        socle.presets.load (i);
+
+        const auto name = socle.presets.currentName();
+        const auto& notes = name == "HANGAR" ? accords : onLegato.contains (name) ? liee : ligne;
+        const auto file = presetDir.getChildFile (juce::String::formatted ("%02d_", i + 1) + juce::File::createLegalFileName (name) + ".wav");
+        if (! play (*plugin, notes, &notes == &accords ? 1 : 2, file))
+            return 1;
     }
     return 0;
 }

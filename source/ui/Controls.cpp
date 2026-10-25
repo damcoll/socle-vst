@@ -197,6 +197,40 @@ namespace ui
         g.drawText (getButtonText(), getLocalBounds(), juce::Justification::centred);
     }
 
+    void PresetScreen::show (const juce::String& newNumber, const juce::String& newName, bool isModified)
+    {
+        if (newNumber == number && newName == name && isModified == modified)
+            return;
+        number = newNumber;
+        name = newName;
+        modified = isModified;
+        setTitle ("Preset " + name);
+        repaint();
+    }
+
+    void PresetScreen::paint (juce::Graphics& g)
+    {
+        const auto bounds = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (colours::ecran);
+        g.fillRect (bounds);
+        g.setColour (isMouseOver() ? colours::poussiere : colours::beton);
+        g.drawRect (bounds, 2.0f);
+
+        g.setColour (colours::gris);
+        g.setFont (font (Face::mono, 11.0f));
+        g.drawText (number, bounds.withTrimmedLeft (11.0f), juce::Justification::centredLeft);
+        g.setColour (colours::ambre);
+        g.setFont (font (Face::monoBold, 12.0f, 0.12f));
+        g.drawText (name + (modified ? " *" : ""), bounds.withTrimmedLeft (40.0f).withTrimmedRight (8.0f),
+                    juce::Justification::centredLeft, true);
+    }
+
+    void PresetScreen::mouseDown (const juce::MouseEvent&)
+    {
+        if (onClick != nullptr)
+            onClick();
+    }
+
     namespace
     {
         // Classic VU scale: the needle moves linearly with the signal voltage, +3 VU at the right stop.

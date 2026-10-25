@@ -68,6 +68,23 @@ namespace ui
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     };
 
+    // The preset screen in the top bar: number, name in amber, a star once edited. Click for the list.
+    class PresetScreen final : public juce::Component
+    {
+    public:
+        PresetScreen() { setMouseCursor (juce::MouseCursor::PointingHandCursor); }
+
+        void show (const juce::String& number, const juce::String& name, bool modified);
+        void paint (juce::Graphics&) override;
+        void mouseDown (const juce::MouseEvent&) override;
+
+        std::function<void()> onClick;
+
+    private:
+        juce::String number, name;
+        bool modified = false;
+    };
+
     // Amber screen with a VU needle and the last note played
     class VuMeter final : public juce::Component
     {

@@ -111,12 +111,100 @@ SocleEditor::Panel::Panel (SocleProcessor& p)
 
     for (juce::Component* c : { (juce::Component*) &forme1, (juce::Component*) &forme2, (juce::Component*) &mode,
                                 (juce::Component*) &destination, (juce::Component*) &delayTemps, (juce::Component*) &vu,
-                                (juce::Component*) &previous, (juce::Component*) &next, (juce::Component*) &save })
+                                (juce::Component*) &previous, (juce::Component*) &next, (juce::Component*) &save,
+                                (juce::Component*) &presetScreen })
         addAndMakeVisible (c);
 
-    // presets come in the next step
     previous.setTitle (fr ("Preset précédent"));
     next.setTitle ("Preset suivant");
+    previous.onClick = [this] { stepPreset (-1); };
+    next.onClick = [this] { stepPreset (1); };
+    save.onClick = [this] { askPresetName(); };
+    presetScreen.onClick = [this] { showPresetMenu(); };
+    refreshPresetScreen();
+}
+
+void SocleEditor::Panel::stepPreset (int delta)
+{
+    auto& presets = processor.presets;
+    presets.rescanUserFolder();
+    const auto count = (int) presets.all().size();
+    if (count == 0)
+        return;
+    // from INIT (no preset), the right arrow goes to the first one and the left arrow to the last
+    const auto from = presets.current() >= 0 ? presets.current() : (delta > 0 ? -1 : count);
+    presets.load ((from + delta + count) % count);
+    refreshPresetScreen();
+}
+
+void SocleEditor::Panel::showPresetMenu()
+{
+    auto& presets = processor.presets;
+    presets.rescanUserFolder();
+    const auto& list = presets.all();
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader ("USINE");
+    for (int i = 0; i < presets.numFactory(); ++i)
+        menu.addItem (i + 1, juce::String::formatted ("%02d  ", i + 1) + list[(size_t) i].name, true, i == presets.current());
+
+    menu.addSectionHeader ("TES PRESETS");
+    if ((int) list.size() == presets.numFactory())
+        menu.addItem (-1, fr ("(aucun pour l'instant : SAUVER)"), false);
+    for (int i = presets.numFactory(); i < (int) list.size(); ++i)
+        menu.addItem (i + 1, list[(size_t) i].name, true, i == presets.current());
+
+    menu.addSeparator();
+    constexpr int openFolder = 10000;
+    menu.addItem (openFolder, "Ouvrir le dossier des presets");
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&presetScreen),
+                        [safe = juce::Component::SafePointer<Panel> (this)] (int result)
+                        {
+                            if (safe == nullptr || result == 0)
+                                return;
+                            if (result == openFolder)
+                            {
+                                const auto folder = PresetManager::userFolder();
+                                folder.createDirectory();
+                                folder.startAsProcess();
+                                return;
+                            }
+                            safe->processor.presets.load (result - 1);
+                            safe->refreshPresetScreen();
+                        });
+}
+
+void SocleEditor::Panel::askPresetName()
+{
+    auto* window = new juce::AlertWindow ("SAUVER LE PRESET", fr ("Nom de ton preset :"), juce::MessageBoxIconType::NoIcon, this);
+    const auto current = processor.presets.current();
+    const auto suggestion = current >= processor.presets.numFactory() ? processor.presets.currentName() : juce::String();
+    window->addTextEditor ("name", suggestion);
+    window->addButton ("SAUVER", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("ANNULER", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    // the window is deleted after the callback, so its text can still be read there
+    window->enterModalState (true, juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<Panel> (this), window] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+        if (! safe->processor.presets.save (window->getTextEditorContents ("name")))
+            juce::AlertWindow::showAsync (juce::MessageBoxOptions::makeOptionsOk (juce::MessageBoxIconType::WarningIcon, "SOCLE",
+                                                                                   fr ("Impossible d'enregistrer ce preset.")),
+                                          nullptr);
+        safe->refreshPresetScreen();
+    }), true);
+}
+
+void SocleEditor::Panel::refreshPresetScreen()
+{
+    const auto& presets = processor.presets;
+    const auto index = presets.current();
+    const auto number = index < 0 ? juce::String ("--")
+                      : index < presets.numFactory() ? juce::String::formatted ("%02d", index + 1)
+                                                     : juce::String ("U") + juce::String (index - presets.numFactory() + 1);
+    presetScreen.show (number, presets.currentName(), presets.isModified());
 }
 
 SocleEditor::Control& SocleEditor::Panel::add (const char* id, const char* text, bool fader)
@@ -148,6 +236,7 @@ void SocleEditor::Panel::resized()
     previous.setBounds (612, 16, 32, 32);
     next.setBounds (880, 16, 32, 32);
     save.setBounds (920, 16, 80, 32);
+    presetScreen.setBounds (652, 16, 220, 32);
 }
 
 void SocleEditor::Panel::paint (juce::Graphics& g)
@@ -174,18 +263,6 @@ void SocleEditor::Panel::paint (juce::Graphics& g)
     g.setColour (colours::gris);
     g.setFont (font (Face::mono, 11.0f, 0.16f));
     g.drawText (fr ("BASSE · 8 VOIX · SOUSTRACTIF"), 24 + logoWidth + 18, 25, 320, 16, juce::Justification::centredLeft);
-
-    const juce::Rectangle<float> screen (652.0f, 16.0f, 220.0f, 32.0f);
-    g.setColour (colours::ecran);
-    g.fillRect (screen);
-    g.setColour (colours::beton);
-    g.drawRect (screen, 2.0f);
-    g.setColour (colours::gris);
-    g.setFont (font (Face::mono, 11.0f));
-    g.drawText ("--", screen.withTrimmedLeft (12.0f), juce::Justification::centredLeft);
-    g.setColour (colours::ambre);
-    g.setFont (font (Face::monoBold, 12.0f, 0.12f));
-    g.drawText (presetName, screen.withTrimmedLeft (40.0f), juce::Justification::centredLeft);
 
     g.setColour (colours::graphite.interpolatedWith (colours::ambre, ledLevel));
     g.fillEllipse (1030.0f, 27.0f, 10.0f, 10.0f);
@@ -281,6 +358,9 @@ void SocleEditor::timerCallback()
         panel.lfoLevel = lfo;
         panel.repaint (624, row2 + 20, 18, 18);
     }
+
+    // preset name and its star, also after the host restored a set or automation moved a knob
+    panel.refreshPresetScreen();
 
     const auto note = processor.lastNote.load (std::memory_order_relaxed);
     panel.vu.update (processor.outputPeak.exchange (0.0f, std::memory_order_relaxed), note >= 0 ? noteName (note) : juce::String());
