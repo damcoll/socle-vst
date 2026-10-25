@@ -12,6 +12,8 @@ namespace socle::params
     inline const juce::StringArray formes { "SCIE", fr ("CARRÉ") };
     inline const juce::StringArray modes { "POLY", "MONO", "LEGATO" };
     inline const juce::StringArray destinations { "HAUTEUR", "FILTRE", "LARGEUR" };
+    // matches socle::delayDivisions
+    inline const juce::StringArray divisions { "1/16", "1/8", fr ("1/8 POINTÉE"), "1/4", fr ("1/4 POINTÉE"), "1/2" };
 
     // 0..1 knob with its centre at `centre` (times, frequencies)
     inline juce::NormalisableRange<float> skewed (float lo, float hi, float centre)
@@ -75,6 +77,7 @@ namespace socle::params
         add ("chorus", "CHORUS", unit, 0.0f);
         add ("delay", "DELAY", unit, 0.0f);
         add ("retour", "RETOUR", unit, 0.35f);
+        layout.add (std::make_unique<Choice> (juce::ParameterID { "delay_temps", 1 }, "TEMPS DELAY", divisions, 2));
 
         // MACHINE + sortie
         add ("derive", "DÉRIVE", unit, 0.2f);

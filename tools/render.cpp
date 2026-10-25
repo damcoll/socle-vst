@@ -100,6 +100,12 @@ int main (int argc, char* argv[])
                                         { "lfo_dest", 1 }, { "lfo_vitesse", 3 }, { "lfo_quantite", 0.6f } } },
         { "10_lfo_largeur", &tenue, 1, { { "osc1_forme", 1 }, { "niv_sub", 0.4f }, { "coupure", 2500 }, { "env_filtre", 0 }, { "enva_s", 1 },
                                          { "lfo_dest", 2 }, { "lfo_vitesse", 0.7f }, { "lfo_quantite", 0.9f } } },
+        { "11_effets", &ligne, 2, { { "osc2_forme", 0 }, { "coupure", 350 }, { "resonance", 0.6f }, { "env_filtre", 0.55f }, { "envf_d", 0.2f },
+                                    { "saturation", 0.7f }, { "chorus", 0.6f }, { "delay", 0.35f }, { "retour", 0.5f } } },
+        { "12_propre", &ligne, 2, { { "saturation", 0 }, { "derive", 0 }, { "poussiere", 0 } } },
+        { "13_machine_usee", &ligne, 2, { { "derive", 0.75f }, { "poussiere", 0.6f }, { "saturation", 0.5f } } },
+        { "14_accords_chorus", &accords, 1, { { "osc2_forme", 0 }, { "coupure", 900 }, { "env_filtre", 0.3f }, { "enva_a", 0.02f }, { "enva_r", 0.6f },
+                                              { "chorus", 0.8f }, { "delay", 0.25f }, { "retour", 0.4f }, { "delay_temps", 3 } } },
         { "06_accords", &accords, 1, { { "osc2_forme", 0 }, { "coupure", 900 }, { "env_filtre", 0.3f }, { "enva_a", 0.02f }, { "enva_r", 0.6f } } },
     };
 

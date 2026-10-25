@@ -17,6 +17,12 @@ namespace socle
         return (float) std::exp (-6.907755278982137 / (seconds * sampleRate));
     }
 
+    // maps 0..1 onto lo..hi on an exponential curve (frequencies, times)
+    inline double expMap (float x, double lo, double hi)
+    {
+        return lo * std::pow (hi / lo, (double) x);
+    }
+
     inline double noteToHz (double note) { return 440.0 * std::pow (2.0, (note - 69.0) / 12.0); }
 
     // band-limited step correction (polyBLEP) around a discontinuity at phase 0
@@ -133,6 +139,37 @@ namespace socle
         Stage stage = Stage::idle;
         float value = 0.0f, sustain = 1.0f;
         float attackCoef = 0.0f, decayCoefficient = 0.0f, releaseCoef = 0.0f;
+    };
+
+    // State-variable filter (TPT): low, band and high outputs at once
+    struct Svf
+    {
+        void set (double freq, double q, double sampleRate)
+        {
+            const auto g = std::tan (pi * freq / sampleRate);
+            k = 1.0 / q;
+            a1 = 1.0 / (1.0 + g * (g + k));
+            a2 = g * a1;
+            a3 = g * a2;
+        }
+
+        void process (float input)
+        {
+            const auto v3 = input - ic2;
+            const auto v1 = a1 * ic1 + a2 * v3;
+            const auto v2 = ic2 + a2 * ic1 + a3 * v3;
+            ic1 = 2.0 * v1 - ic1;
+            ic2 = 2.0 * v2 - ic2;
+            low = (float) v2;
+            band = (float) v1;
+            high = (float) (input - k * v1 - v2);
+        }
+
+        void reset() { ic1 = ic2 = 0.0; low = band = high = 0.0f; }
+
+        double k = 1.0, a1 = 0.0, a2 = 0.0, a3 = 0.0;
+        double ic1 = 0.0, ic2 = 0.0;
+        float low = 0.0f, band = 0.0f, high = 0.0f;
     };
 
     // removes the DC offset that saturation leaves (first-order high-pass ~10 Hz)

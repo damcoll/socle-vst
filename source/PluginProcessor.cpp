@@ -14,6 +14,9 @@ void SocleProcessor::prepareToPlay (double rate, int)
     synth.setParams (readParams());
     synth.prepare (rate);
     dcBlocker.prepare (rate);
+    dust.prepare (rate);
+    chorus.prepare (rate);
+    delay.prepare (rate);
     masterGain.reset (rate, 0.02);
     masterGain.setCurrentAndTargetValue (masterParam->load());
 }
@@ -48,6 +51,7 @@ socle::SynthParams SocleProcessor::readParams() const
     p.lfoVitesse = value ("lfo_vitesse");
     p.lfoQuantite = value ("lfo_quantite");
     p.lfoDestination = (socle::LfoDestination) juce::roundToInt (value ("lfo_dest"));
+    p.derive = value ("derive");
     return p;
 }
 
@@ -63,6 +67,17 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
     synth.setParams (readParams());
     masterGain.setTargetValue (masterParam->load());
+    saturation.setAmount (value ("saturation"));
+    dust.setAmount (value ("poussiere"));
+    chorus.setAmount (value ("chorus"));
+
+    // the delay follows Ableton's tempo (120 BPM when the host gives none)
+    double bpm = 120.0;
+    if (auto* head = getPlayHead())
+        if (const auto position = head->getPosition())
+            bpm = position->getBpm().orFallback (120.0);
+    const auto division = socle::delayDivisions[juce::jlimit (0, 5, juce::roundToInt (value ("delay_temps")))];
+    delay.set (value ("delay"), value ("retour"), division * 60.0 / juce::jmax (20.0, bpm));
 
     auto* left = buffer.getWritePointer (0);
     auto* right = buffer.getWritePointer (1);
@@ -72,10 +87,16 @@ void SocleProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     {
         for (; sample < end; ++sample)
         {
-            // MASTER at its default (0.8) is unity gain; tanh tames the peaks of the sum
-            const auto out = std::tanh (dcBlocker.process (synth.next()) * 1.25f * masterGain.getNextValue());
-            left[sample] = out;
-            right[sample] = out;
+            // mono until the chorus: SATURATION, POUSSIÈRE, then CHORUS and DELAY in stereo
+            const auto mono = dust.process (saturation.process (dcBlocker.process (synth.next())));
+            float l, r;
+            chorus.process (mono, l, r);
+            delay.process (l, r);
+
+            // MASTER at its default (0.8) is unity gain; tanh tames the peaks
+            const auto gain = 1.25f * masterGain.getNextValue();
+            left[sample] = std::tanh (l * gain);
+            right[sample] = std::tanh (r * gain);
         }
     };
 

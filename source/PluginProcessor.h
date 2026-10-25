@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "dsp/Effects.h"
+#include "dsp/Machine.h"
 #include "dsp/Synth.h"
 
 #include <atomic>
@@ -28,7 +30,7 @@ public:
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return socle::Delay::maxSeconds; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -47,6 +49,10 @@ public:
 private:
     socle::Synth synth;
     socle::DcBlocker dcBlocker;
+    socle::Saturation saturation;
+    socle::Dust dust;
+    socle::Chorus chorus;
+    socle::Delay delay;
     juce::SmoothedValue<float> masterGain;
 
     // the panel's current values, gathered for the synth once per block

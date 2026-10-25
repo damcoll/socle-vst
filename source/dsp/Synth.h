@@ -29,6 +29,7 @@ namespace socle
         float glide = 0.0f; // seconds
         float lfoVitesse = 2.0f, lfoQuantite = 0.0f;
         LfoDestination lfoDestination = LfoDestination::filtre;
+        float derive = 0.2f;
     };
 
     // what changes every sample and is shared by all voices
@@ -44,6 +45,8 @@ namespace socle
         void prepare (double rate)
         {
             sampleRate = rate;
+            // DÉRIVE: the slow wander settles over ~1.5 s and picks a new direction every 1 to 3 s
+            wanderCoef = 1.0f - decayCoef (1.5, rate);
             filter.prepare (rate);
             ampEnv.kill();
             filterEnv.kill();
@@ -59,11 +62,17 @@ namespace socle
             age = order;
             targetPitch = (float) midiNote;
             pitch = fromPitch < 0.0f ? targetPitch : fromPitch;
+            // DÉRIVE: each note is a little out of tune and a little brighter or darker
+            noteDetune = drift.next();
+            noteDetune2 = drift.next();
+            noteCutoff = drift.next();
             if (wasSilent)
             {
-                // a fresh note starts from the same phase every time: the attack punches the same way
-                osc1.reset();
-                osc2.reset();
+                // a fresh note starts from the same phase every time: the attack punches the same way;
+                // with DÉRIVE the phases scatter, like free-running analog oscillators
+                const auto scatter = (double) phaseScatter;
+                osc1.reset (scatter * (0.5 + 0.5 * drift.next()));
+                osc2.reset (scatter * (0.5 + 0.5 * drift.next()));
                 sub.reset();
                 filter.reset();
             }
@@ -91,6 +100,7 @@ namespace socle
             ampEnv.setTimes (p.aA, p.aD, p.aS, p.aR, sampleRate);
             filterEnv.setTimes (p.fA, p.fD, p.fS, p.fR, sampleRate);
             osc2Ratio = std::pow (2.0, (p.accord2 + p.desaccord2 / 100.0) / 12.0);
+            phaseScatter = p.derive;
             // GLIDE = time to get (99 %) to the new note
             glideCoef = p.glide < 0.001f ? 1.0f : 1.0f - std::exp (-4.6f / (p.glide * (float) sampleRate));
         }
@@ -98,9 +108,19 @@ namespace socle
         float next (const SynthParams& p, const Modulation& mod)
         {
             pitch += (targetPitch - pitch) * glideCoef;
-            const auto f1 = noteToHz ((double) (pitch + mod.pitchOffset));
+
+            // DÉRIVE at full: the voice wanders +/-15 cents, each note +/-7, OSC 2 +/-5 on its own
+            if (--wanderCountdown <= 0)
+            {
+                wanderTarget = drift.next();
+                wanderCountdown = (int) (sampleRate * (2.0 + drift.next()));
+            }
+            wander += (wanderTarget - wander) * wanderCoef;
+            const auto cents = p.derive * (15.0f * wander + 7.0f * noteDetune);
+
+            const auto f1 = noteToHz ((double) (pitch + mod.pitchOffset + cents / 100.0f));
             osc1.setFreq (f1, sampleRate);
-            osc2.setFreq (f1 * osc2Ratio, sampleRate);
+            osc2.setFreq (f1 * osc2Ratio * (1.0 + p.derive * 0.0029 * noteDetune2), sampleRate);
             sub.setFreq (f1 * 0.5, sampleRate);
 
             const auto mix = osc1.next (p.shape1, mod.pulseWidth) * p.niveau1
@@ -114,7 +134,8 @@ namespace socle
             const auto octaves = mod.cutoffOctaves
                                + 7.0f * p.envFiltre * fEnv
                                + 0.5f * (pitch - 48.0f) / 12.0f
-                               + 3.0f * p.velocite * (velocity - 0.5f);
+                               + 3.0f * p.velocite * (velocity - 0.5f)
+                               + 0.3f * p.derive * noteCutoff;
             filter.set (20.0 * std::exp2 ((double) octaves), p.resonance, p.drive);
 
             const auto level = 1.0f - p.velocite * (1.0f - velocity) * 0.7f;
@@ -125,12 +146,15 @@ namespace socle
         }
 
         Oscillator osc1, osc2, sub;
-        Noise noise;
+        Noise noise, drift { 0x5eed1u };
         Ladder filter;
         Adsr ampEnv, filterEnv;
         double sampleRate = 44100.0, osc2Ratio = 1.0;
         int note = -1;
         float velocity = 1.0f, pitch = 0.0f, targetPitch = 0.0f, glideCoef = 1.0f;
+        float wander = 0.0f, wanderTarget = 0.0f, wanderCoef = 0.0f, phaseScatter = 0.0f;
+        float noteDetune = 0.0f, noteDetune2 = 0.0f, noteCutoff = 0.0f;
+        int wanderCountdown = 0;
         uint32_t age = 0;
     };
 
@@ -144,6 +168,7 @@ namespace socle
             {
                 v.prepare (rate);
                 v.noise.state = (seed += 0x9e3779b9u);
+                v.drift.state = seed ^ 0xa5a5a5a5u;
                 v.update (params);
             }
             heldCount = 0;
